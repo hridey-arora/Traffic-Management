@@ -43,5 +43,5 @@ The system ensures:
 
 1. Clone the repo:  
    ```bash
-   git clone https://github.com/your-username/smart-traffic.git
-   cd smart-traffic
+   git clone https://github.com/hridey-arora/Traffic-management.git
+   cd Traffic-management
