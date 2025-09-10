@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Smart Traffic Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0f172a; --card:#0b1220; --muted:#94a3b8; --accent:#06b6d4;
+      --green:#16a34a; --red:#ef4444; --yellow:#f59e0b; --white:#ffffff;
+    }
+    body{font-family:Inter,system-ui,Arial; background:linear-gradient(180deg,#071025,#071827); color:var(--white); margin:0;padding:20px;}
+    .wrap{max-width:1000px;margin:0 auto;}
+    h1{margin:0 0 14px;font-size:22px;}
+    .top {display:flex; gap:12px; align-items:center; margin-bottom:12px; flex-wrap:wrap;}
+    .pill{background:rgba(255,255,255,0.04); padding:8px 12px;border-radius:999px;font-size:14px;color:var(--muted);}
+    .grid {display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin-bottom:14px;}
+    .lane {
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius:12px; padding:12px; text-align:center; box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+    }
+    .lane h3{margin:2px 0 8px; font-size:16px;}
+    .count{font-size:20px; font-weight:600; margin-bottom:8px;}
+    .lightbar{height:12px; background:#0b1220; border-radius:8px; overflow:hidden; position:relative;}
+    .bar-fill{height:100%; width:0%; background:var(--muted); transition:width 300ms linear;}
+    .status{margin-top:8px; font-size:13px; color:var(--muted);}
+
+    /* Buttons */
+    .controls{display:flex; gap:12px; flex-wrap:wrap; margin-top:6px;}
+    button{padding:12px 18px; border-radius:12px; border:0; font-size:16px; cursor:pointer;}
+    .btn-primary{background:var(--accent); color:#022b30;}
+    .btn-warning{background:var(--yellow); color:#2b1400;}
+    .btn-danger{background:var(--red); color:#fff;}
+    .btn-soft{background:rgba(255,255,255,0.04); color:var(--white);}
+
+    /* Timers area */
+    .timers{display:flex; gap:12px; margin-top:12px; flex-wrap:wrap;}
+    .timer-card{background:rgba(255,255,255,0.03); padding:12px 14px; border-radius:10px; min-width:180px;}
+    .timer-title{font-size:13px; color:var(--muted); margin-bottom:6px;}
+    .timer-value{font-size:20px; font-weight:700;}
+    .progress {height:10px; background:#071827; border-radius:999px; overflow:hidden; margin-top:8px;}
+    .progress > i {display:block; height:100%; width:0%; background: linear-gradient(90deg,var(--accent), #7c3aed); transition:width 500ms linear;}
+
+    /* pedestrian blinking visual */
+    .ped-active { animation: blink 1s infinite; box-shadow: 0 0 16px rgba(249,115,22,0.35); }
+    @keyframes blink { 0%{opacity:1} 50%{opacity:.6} 100%{opacity:1} }
+
+    footer{display:none;margin-top:18px;color:var(--muted); font-size:13px;}
+    @media (max-width:720px){
+      .grid{grid-template-columns: repeat(2,1fr);}
+      .timers{flex-direction:column;}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🚦 Smart Traffic — Prototype (UI)</h1>
+
+    <div class="top">
+      <div class="pill">Intersection: Demo Junction</div>
+      <div class="pill">Mode: Adaptive (single-green)</div>
+      <div id="pedBadge" class="pill" style="display:none;background:#f97316;color:#2b1400;">Pedestrian Requested</div>
+      <div id="emBadge" class="pill" style="display:none;background:#ef4444;color:#fff;">Emergency Active</div>
+    </div>
+
+    <div class="grid" id="lanesGrid"></div>
+
+    <div class="timers">
+      <div class="timer-card">
+        <div class="timer-title">Signal Scan</div>
+        <div id="signalRemaining" class="timer-value">— s</div>
+        <div class="progress" aria-hidden><i id="signalProg"></i></div>
+        <div class="status" id="signalInfo">Active lane: —</div>
+      </div>
+
+      <div class="timer-card">
+        <div class="timer-title">Pedestrian wait</div>
+        <div id="pedWait" class="timer-value">— s</div>
+        <div class="progress"><i id="pedWaitProg"></i></div>
+        <div class="status" id="pedWaitInfo">Waiting for crossing</div>
+      </div>
+
+      <div class="timer-card">
+        <div class="timer-title">Pedestrian crossing</div>
+        <div id="pedCross" class="timer-value">— s</div>
+        <div class="progress"><i id="pedCrossProg"></i></div>
+        <div class="status" id="pedCrossInfo">Crossing phase</div>
+      </div>
+
+      <div class="timer-card">
+        <div class="timer-title">Pedestrian cooldown</div>
+        <div id="pedCool" class="timer-value">— s</div>
+        <div class="progress"><i id="pedCoolProg"></i></div>
+        <div class="status" id="pedCoolInfo">Button cooldown</div>
+      </div>
+    </div>
+
+    <div class="controls" style="margin-top:14px;">
+      <button class="btn-primary" onclick="setEmergency(0)">🚑 Ambulance Lane A</button>
+      <button class="btn-primary" onclick="setEmergency(1)">🚑 Lane B</button>
+      <button class="btn-primary" onclick="setEmergency(2)">🚑 Lane C</button>
+      <button class="btn-primary" onclick="setEmergency(3)">🚑 Lane D</button>
+      <button class="btn-soft" onclick="clearEmergency()">✅ Clear Ambulance</button>
+      <button id="pedBtn" class="btn-warning" onclick="requestPedestrian()">🚶 Request Pedestrian</button>
+    </div>
+
+    <footer>
+      Backend endpoints used: <code>/data</code>, <code>/pedestrian</code>, <code>/emergency</code>, <code>/clear_emergency</code>.
+    </footer>
+  </div>
+
+<script>
+const SIGNAL_DEFAULT = 7;
+const PED_WAIT = 30;
+const PED_CROSS = 15;
+const PED_COOLDOWN = 120;
+
+let lanes = ["A","B","C","D"];
+let signalRemaining = SIGNAL_DEFAULT;
+let signalActiveLane = null;
+let signalLastUpdate = Date.now();
+let pedRequestStart = null;
+let pedCooldownRemaining = 0;
+let lastPedState = false;
+
+// create lane cards
+const lanesGrid = document.getElementById('lanesGrid');
+for(let i=0;i<4;i++){
+  const div = document.createElement('div');
+  div.className = 'lane';
+  div.id = 'lane'+i;
+  div.innerHTML = `<h3>Lane ${lanes[i]}</h3>
+                   <div class="count" id="cars${i}">0</div>
+                   <div class="lightbar"><div id="bar${i}" class="bar-fill"></div></div>
+                   <div class="status" id="stat${i}">RED</div>`;
+  lanesGrid.appendChild(div);
+}
+
+function setProg(el,pct){ el.style.width = Math.max(0,Math.min(100,pct))+'%'; }
+
+async function refresh(){
+  try{
+    const res = await fetch('/data');
+    if(!res.ok) throw new Error('fetch failed');
+    const data = await res.json();
+
+    // --- vehicle counts
+    const maxCars = Math.max(...data.vehicles,1);
+    data.vehicles.forEach((v,i)=>{
+      document.getElementById('cars'+i).textContent = v + ' cars';
+      setProg(document.getElementById('bar'+i), Math.round(v/maxCars*100));
+    });
+
+    // --- SIGNAL TIMER COUNTDOWN ---
+    if(data.current_green !== null){
+      if(signalActiveLane !== data.current_green){
+        signalActiveLane = data.current_green;
+        signalRemaining = data.signals[data.current_green];
+        signalLastUpdate = Date.now();
+      } else {
+        const now = Date.now();
+        const elapsed = Math.floor((now - signalLastUpdate)/1000);
+        if(elapsed > 0){
+          signalRemaining = Math.max(signalRemaining - elapsed,0);
+          signalLastUpdate = now;
+        }
+      }
+    } else {
+      signalRemaining = 0;
+      signalActiveLane = null;
+    }
+
+    document.getElementById('signalRemaining').textContent = signalRemaining + ' s';
+    let progPct = signalActiveLane!==null ? Math.round((SIGNAL_DEFAULT - signalRemaining)/SIGNAL_DEFAULT*100) : 0;
+    setProg(document.getElementById('signalProg'), progPct);
+    document.getElementById('signalInfo').textContent = signalActiveLane !== null ? 
+      `Active lane: ${lanes[signalActiveLane]}` : (data.pedestrian.requested ? 'All-red (pedestrian)' : '—');
+
+    // --- color lanes ---
+    const pedActiveAllRed = data.signals.every(s=>s===0) && data.pedestrian.requested;
+    for(let i=0;i<4;i++){
+      const el = document.getElementById('lane'+i);
+      if(data.signals[i]>0){
+        el.style.border='2px solid rgba(34,197,94,0.35)';
+        el.style.boxShadow='0 10px 30px rgba(34,197,94,0.06)';
+        el.style.background='linear-gradient(180deg, rgba(34,197,94,0.07), rgba(255,255,255,0.01))';
+        document.getElementById('stat'+i).textContent='GREEN';
+      } else {
+        el.style.border='2px solid rgba(239,68,68,0.06)';
+        el.style.boxShadow='';
+        el.style.background='';
+        document.getElementById('stat'+i).textContent='RED';
+      }
+      if(pedActiveAllRed){
+        el.classList.add('ped-active');
+        document.getElementById('stat'+i).textContent='PEDESTRIAN CROSSING';
+      } else {
+        el.classList.remove('ped-active');
+      }
+    }
+
+    // --- pedestrian tracking ---
+    if(data.pedestrian.requested && !lastPedState){
+      pedRequestStart = Date.now();
+      lastPedState = true;
+      document.getElementById('pedBadge').style.display='inline-block';
+    } else if(!data.pedestrian.requested && lastPedState){
+      lastPedState = false;
+      pedRequestStart=null;
+      pedCooldownRemaining = PED_COOLDOWN;
+      document.getElementById('pedBadge').style.display='none';
+    }
+
+    // --- pedestrian timers ---
+    let pedWaitDisplay='—', pedCrossDisplay='—';
+    let pedWaitPct=0, pedCrossPct=0;
+    if(pedRequestStart){
+      const elapsed = Math.floor((Date.now() - pedRequestStart)/1000);
+      if(elapsed<PED_WAIT){
+        const rem = PED_WAIT-elapsed;
+        pedWaitDisplay = rem + ' s';
+        pedWaitPct = Math.round(((PED_WAIT-rem)/PED_WAIT)*100);
+      } else if(elapsed<PED_WAIT+PED_CROSS){
+        const rem = PED_WAIT+PED_CROSS - elapsed;
+        pedWaitDisplay='0 s';
+        pedCrossDisplay = rem + ' s';
+        pedCrossPct = Math.round(((PED_CROSS-rem)/PED_CROSS)*100);
+      } else {
+        pedWaitDisplay='0 s';
+        pedCrossDisplay='0 s';
+      }
+    }
+    document.getElementById('pedWait').textContent=pedWaitDisplay;
+    setProg(document.getElementById('pedWaitProg'), pedWaitPct);
+    document.getElementById('pedCross').textContent=pedCrossDisplay;
+    setProg(document.getElementById('pedCrossProg'), pedCrossPct);
+
+    // --- local cooldown ---
+    if(pedCooldownRemaining>0){
+      pedCooldownRemaining=Math.max(pedCooldownRemaining-1,0);
+      document.getElementById('pedCool').textContent=pedCooldownRemaining+' s';
+      setProg(document.getElementById('pedCoolProg'), Math.round((PED_COOLDOWN-pedCooldownRemaining)/PED_COOLDOWN*100));
+      document.getElementById('pedBtn').disabled=true;
+      document.getElementById('pedBtn').style.opacity=0.6;
+    } else {
+      document.getElementById('pedCool').textContent='Ready';
+      setProg(document.getElementById('pedCoolProg'),100);
+      document.getElementById('pedBtn').disabled=false;
+      document.getElementById('pedBtn').style.opacity=1;
+    }
+
+    // --- emergency badge ---
+    const emBadge = document.getElementById('emBadge');
+    if(data.emergency_lane!==null){
+      emBadge.style.display='inline-block';
+      emBadge.textContent=`🚑 Emergency on lane ${lanes[data.emergency_lane]}`;
+    } else emBadge.style.display='none';
+
+  } catch(e){ console.error('refresh error',e); }
+}
+
+// --- actions ---
+async function requestPedestrian(){
+  try{
+    const r = await fetch('/pedestrian',{method:'POST'});
+    const j = await r.json();
+    if(!j.accepted && j.accepted!==undefined) alert('Pedestrian request ignored.');
+  }catch(e){ console.error(e); alert('Failed pedestrian request'); }
+}
+
+async function setEmergency(lane){
+  await fetch('/emergency',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lane})});
+}
+
+async function clearEmergency(){
+  await fetch('/clear_emergency',{method:'POST'});
+}
+
+// start polling
+refresh();
+setInterval(refresh,1000);
+</script>
+</body>
+</html>
