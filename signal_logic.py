@@ -3,11 +3,20 @@ import time
 from datetime import datetime
 
 class SignalLogic:
+    def get_remaining(self):
+        """
+        Returns remaining seconds for current green lane
+        """
+        if self.current_green is None:
+            return 0
+        return max(0, int(self.cycle_time - (time.time() - self.last_green[self.current_green])))
+
+
     def __init__(
         self,
-        cycle_time=30,          # seconds green for selected lane
+        cycle_time=7,          # seconds green for selected lane
         fairness_time=90,       # max time any lane can wait before forced green
-        pedestrian_wait=30,     # seconds after request before stopping cars
+        pedestrian_wait=30,     # seconds after request before stopping traffic
         pedestrian_cross=15,    # duration of all-red for pedestrians
         pedestrian_cooldown=120 # min seconds between accepted requests
     ):
@@ -35,10 +44,10 @@ class SignalLogic:
             return [1.0, 1.0, 1.4, 1.3]
         return [1.0, 1.0, 1.0, 1.0]
 
-    # Public API
+    # Called by API to request pedestrian crossing; returns True if accepted
     def request_pedestrian(self) -> bool:
         now = time.time()
-        # cooldown: ignore spam
+        # cooldown: ignore spam, and ignore if already requested
         if (now - self.ped_last_done) < self.ped_cooldown or self.ped_requested:
             return False
         self.ped_requested = True
@@ -49,7 +58,7 @@ class SignalLogic:
         if not self.ped_requested or self.ped_request_time is None:
             return False
         elapsed = now - self.ped_request_time
-        # after waiting window, we stop cars for crossing duration
+        # after wait period → stop cars for crossing duration
         return self.ped_wait <= elapsed < (self.ped_wait + self.ped_cross)
 
     def _pedestrian_maybe_reset(self, now: float):
@@ -72,7 +81,7 @@ class SignalLogic:
 
         # 1) Pedestrian crossing (all red during crossing window)
         if self._pedestrian_phase_active(now):
-            # keep all red
+            # keep all red (signals = [0,0,0,0])
             return signals
         # If pedestrian cycle is completed, reset flags
         self._pedestrian_maybe_reset(now)
