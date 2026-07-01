@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Flask/local runtime
+instance/
+*.log
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
